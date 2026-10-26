@@ -1,0 +1,4 @@
+#!/bin/sh
+# Last line of defence before anything leaves the machine: scan every object and
+# commit message reachable from any ref, not only the commits being pushed.
+exec python3 "$(git rev-parse --show-toplevel)/scripts/secret_scan.py" --history
