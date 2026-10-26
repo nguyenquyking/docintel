@@ -59,12 +59,21 @@ def partial_ratio(needle: str, hay: str) -> float:
 
 
 def quote_score(quote: str, page_text: str) -> float:
+    """How well a quoted span is supported by the page text. A quote that crosses a layout
+    break (two columns, a table cell, a line the model re-flowed) is checked segment by
+    segment: every segment must be on the page."""
     q, p = normalize_for_match(quote), normalize_for_match(page_text)
     if not q:
         return 0.0
     if q in p:
         return 1.0
-    return partial_ratio(q, p)
+    whole = partial_ratio(q, p)
+    segments = [normalize_for_match(x) for x in re.split(r"\n+|\s*\|\s*", quote)]
+    segments = [x for x in segments if len(x) >= 4]
+    if len(segments) >= 2:
+        per_segment = min(1.0 if x in p else partial_ratio(x, p) for x in segments)
+        return max(whole, per_segment)
+    return whole
 
 
 # ── organizations, people, jurisdictions ─────────────────────────────────────

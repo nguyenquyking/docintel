@@ -83,7 +83,12 @@ def test_exact_request_cache(monkeypatch):
     msgs = [{"role": "user", "content": "same question"}]
     first = asyncio.run(llm.chat(msgs, purpose="test"))
     second = asyncio.run(llm.chat(msgs, purpose="test"))
-    assert len(hits) == 1 and second.cache_hit and second.cost_usd == 0 and second.content == first.content
+    assert len(hits) == 1 and second.cache_hit and second.content == first.content
+    # spend is zero, but config comparisons see the nominal cost of the answer
+    assert second.cost_usd == first.cost_usd > 0
+    with session_scope() as db:
+        hit = db.scalars(select(LLMCall).where(LLMCall.cache_hit.is_(True))).one()
+        assert hit.cost_usd == 0
 
 
 def test_structured_output_and_truncation(monkeypatch):

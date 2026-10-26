@@ -24,7 +24,7 @@ from .layout import (
 )
 from .ocr import get_engine
 from .pdf import open_pdf, read_text_layer, render_page
-from .router import route_scanned, route_text_layer, why_no_text_layer
+from .router import route_scanned, route_text_layer, text_plausibility, why_no_text_layer
 from .vlm import image_to_data_url, transcribe_page
 
 log = logging.getLogger(__name__)
@@ -46,12 +46,15 @@ def signature_tokens(words: list[Word], marks: list[tuple[float, float, float, f
     """A drawn mark next to a signature line is evidence of execution that the text layer
     does not carry. Geometry finds it for free; the token makes it visible to the model."""
     anchors = [w for w in words if _ANCHOR.match(w.text)]
+    heights = sorted(w.bottom - w.top for w in words) or [10.0]
+    h = heights[len(heights) // 2]
     tokens = []
     for x0, top, x1, bottom, kind in marks:
         cy = (top + bottom) / 2
         if any(abs(cy - (a.top + a.bottom) / 2) < 90 and x0 - 80 < a.x0 < x1 + 160 for a in anchors):
             label = "[stamp]" if kind == "stamp" else "[signed]"
-            tokens.append(Word(label, x0, top, min(x1, x0 + 40), bottom))
+            # a word-sized box at the mark's centre: a 60pt-tall seal must not glue lines together
+            tokens.append(Word(label, x0, cy - h / 2, min(x1, x0 + 40), cy + h / 2))
     return tokens
 
 
@@ -65,7 +68,7 @@ def _page_from_text_layer(page_no: int, width: float, height: float, layer, reas
     for token in signature_tokens(words, layer.marks):
         sizes[len(words)] = layer.median_size
         words.append(token)
-    blocks = build_blocks(words, sizes, bold, layer.tables, layer.median_size)
+    blocks = build_blocks(words, sizes, bold, layer.tables, layer.median_size, page_height=float(height))
     text = blocks_to_text(blocks)
     struck_text = []
     if struck:
@@ -84,7 +87,7 @@ def _page_from_text_layer(page_no: int, width: float, height: float, layer, reas
 
 def _page_from_ocr(page_no: int, width: float, height: float, ocr, scale: float, reason: str, quality) -> PageIR:
     words = [Word(w.text, w.x0 * scale, w.top * scale, w.x1 * scale, w.bottom * scale, w.conf) for w in ocr.words]
-    blocks = build_blocks(words)
+    blocks = build_blocks(words, page_height=float(height))
     text = blocks_to_text(blocks)
     return PageIR(page_no=page_no, width=float(width), height=float(height), route="ocr", route_reason=reason,
                   language=detect_language(text), ocr_engine=ocr.engine, ocr_confidence=round(ocr.mean_confidence, 4),
@@ -115,11 +118,13 @@ def _analyse(path: Path, settings: Settings) -> tuple[list[PageIR | None], list[
             ocr = engine.recognize(image) if engine else None
             ocr_lang = detect_language(ocr.text) if ocr and ocr.text else None
             tabular = bool(ocr and looks_tabular(group_lines(ocr.words)))
+            plausible, why = text_plausibility(ocr.text) if ocr else (True, "")
             decision = route_scanned(
                 base_reason=base_reason, ocr_engine=engine.name if engine else None,
                 ocr_languages=engine.languages if engine else frozenset(), ocr_confidence=ocr.mean_confidence if ocr else None,
                 ocr_language=ocr_lang, doc_language_hint=doc_lang_hint, tabular=tabular,
-                min_confidence=settings.ocr_min_confidence, vlm_enabled=settings.vlm_enabled)
+                min_confidence=settings.ocr_min_confidence, vlm_enabled=settings.vlm_enabled,
+                implausible=None if plausible else why, unread_share=ocr.unread_share if ocr else 0.0)
             if ocr_lang in ("vi", "vi_noaccent"):
                 doc_lang_hint = doc_lang_hint or "vi"
             if decision.route == "ocr" and ocr is not None:

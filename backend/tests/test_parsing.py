@@ -57,6 +57,15 @@ def test_vietnamese_seal_and_bilingual_language(tmp_path):
     assert "[stamp]" in ir.pages[-1].text and "[signed]" in ir.pages[-1].text
 
 
+def test_signature_blocks_are_read_column_by_column(tmp_path):
+    spec = find_spec("vi", "lease")
+    ir = _parse(tmp_path, render_pdf(build_document(spec)))
+    sig = next(b.text for p in ir.pages for b in p.blocks if b.kind == "signature" and spec.signers[0][0] in b.text)
+    (name_a, title_a), (name_b, _) = spec.signers
+    assert sig.index(name_a) < sig.index(title_a) < sig.index(name_b)      # party A's column, then party B's
+    assert f"{name_a} {name_b}" not in sig
+
+
 def test_scanned_english_goes_to_local_ocr(tmp_path):
     spec = find_spec("en", "nda", scanned=True)
     data = to_scanned_pdf(render_pdf(build_document(spec)), random.Random(1))

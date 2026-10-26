@@ -91,3 +91,9 @@ def test_token_estimate_is_higher_for_vietnamese():
     en = "the agreement shall renew automatically " * 20
     vi = "hợp đồng sẽ được tự động gia hạn thêm " * 20
     assert estimate_tokens(vi) / len(vi) > estimate_tokens(en) / len(en)
+
+
+def test_quotes_across_layout_breaks_are_checked_per_segment():
+    page = "ĐẠI DIỆN BÊN A\nLê Hoàng Minh\nPhó Giám đốc\nNgày ký: 21/05/2023\n\nĐẠI DIỆN BÊN B\nVõ Ngọc Lan"
+    assert quote_score("Lê Hoàng Minh\n\nPhó Giám đốc\n\nNgày ký: 21/05/2023", page) == 1.0
+    assert quote_score("Lê Hoàng Minh\n\nTổng Giám đốc Hội đồng quản trị", page) < 0.85

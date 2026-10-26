@@ -37,9 +37,24 @@ def why_no_text_layer(char_count: int, quality: float, image_coverage: float) ->
     return f"text layer is garbage (quality {quality:.2f} < {MIN_TEXT_QUALITY})"
 
 
+def text_plausibility(text: str) -> tuple[bool, str]:
+    """Is OCR output shaped like language? Recognizers can be confidently wrong in ways their
+    confidence never shows: dropped spaces ('ThisMutualNon-DisclosureAgreement', conf 0.97)
+    or dropped diacritics. Word-length statistics catch the first; language ID the second."""
+    tokens = [t for t in text.split() if any(c.isalpha() for c in t)]
+    if len(tokens) < 15:
+        return True, ""
+    mean_len = sum(len(t) for t in tokens) / len(tokens)
+    long_share = sum(len(t) >= 16 for t in tokens) / len(tokens)
+    if mean_len > 8.0 or long_share > 0.08:
+        return False, f"OCR text implausible (mean word length {mean_len:.1f}, {long_share:.0%} run-on tokens: spaces lost)"
+    return True, ""
+
+
 def route_scanned(*, base_reason: str, ocr_engine: str | None, ocr_languages: frozenset[str],
                   ocr_confidence: float | None, ocr_language: str | None, doc_language_hint: str | None,
-                  tabular: bool, min_confidence: float, vlm_enabled: bool) -> RouteDecision:
+                  tabular: bool, min_confidence: float, vlm_enabled: bool,
+                  implausible: str | None = None, unread_share: float = 0.0) -> RouteDecision:
     if ocr_engine is None:
         if vlm_enabled:
             return RouteDecision("vlm", f"{base_reason}; no local OCR engine → VLM")
@@ -52,8 +67,11 @@ def route_scanned(*, base_reason: str, ocr_engine: str | None, ocr_languages: fr
         seen = "text came back without diacritics" if ocr_language == "vi_noaccent" else "Vietnamese document"
         return RouteDecision(
             "vlm", f"{base_reason}; {ocr_engine} has no Vietnamese model ({seen}, conf {ocr_confidence or 0:.2f}) → VLM")
+    if implausible:
+        return RouteDecision("vlm", f"{base_reason}; {implausible}, although conf is {ocr_confidence or 0:.2f} → VLM")
     if ocr_confidence is not None and ocr_confidence < min_confidence:
-        return RouteDecision("vlm", f"{base_reason}; OCR conf {ocr_confidence:.2f} < {min_confidence:.2f} → VLM")
+        unread_note = f", {unread_share:.0%} of the text unreadable" if unread_share else ""
+        return RouteDecision("vlm", f"{base_reason}; OCR conf {ocr_confidence:.2f} < {min_confidence:.2f}{unread_note} → VLM")
     if tabular:
         return RouteDecision("vlm", f"{base_reason}; table on a scanned page → VLM (cell structure)")
     return RouteDecision(

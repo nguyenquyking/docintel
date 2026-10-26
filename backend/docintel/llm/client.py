@@ -191,8 +191,11 @@ class LLMClient:
             cached = self._cache_get(request_hash)
             if cached is not None:
                 resp = self._to_response(cached, model, tier, json_schema, latency_ms=0, cache_hit=True)
-                resp.cost_usd = 0.0
+                resp.cost_usd = 0.0          # metered spend: a cache hit costs nothing…
                 self._meter(purpose, tier, model, effort, resp, request_hash, images=images, attempts=0)
+                if self.provider != "fake":  # …but comparisons between configurations use the nominal cost
+                    resp.cost_usd = call_cost(self.pricing(), tier, resp.usage.prompt_tokens,
+                                              resp.usage.completion_tokens, resp.usage.cached_tokens)
                 return resp
 
         estimated = sum(estimate_tokens(m["content"]) if isinstance(m.get("content"), str)

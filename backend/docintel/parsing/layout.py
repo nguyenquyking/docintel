@@ -15,8 +15,8 @@ HEADING_RE = re.compile(
     r"^(?:\d+(?:\.\d+)*\.?\s+\S|(?:ARTICLE|Article|SECTION|Section|SCHEDULE|Schedule|EXHIBIT|Exhibit|ANNEX|Annex|"
     r"AMENDMENT|Amendment|APPENDIX|Appendix|ĐIỀU|Điều|CHƯƠNG|Chương|PHỤ LỤC|Phụ lục)\b)")
 SIGNATURE_RE = re.compile(
-    r"(?i)in witness whereof|^\s*(?:by|name|title|date|signature)\s*:|đại diện bên|ký,? ghi rõ họ tên|"
-    r"\(ký tên|\bchữ ký\b|/s/")
+    r"(?i)in witness whereof|^\s*(?:by|name|title|date|signature)\s*:|^\s*đại diện bên|ký,? ghi rõ họ tên|"
+    r"\(ký tên|^\s*ngày ký\s*:|/s/|\[signed\]|\[stamp\]")
 
 
 def struck_word_indices(words: list[dict], segments: list[tuple[float, float, float]]) -> set[int]:
@@ -96,8 +96,9 @@ def _bbox(words: list[Word]) -> tuple[float, float, float, float]:
 
 def build_blocks(words: list[Word], sizes: dict[int, float] | None = None, bold: set[int] | None = None,
                  tables: list[tuple[tuple[float, float, float, float], list[list[str | None]]]] | None = None,
-                 median_size: float = 10.0) -> list[Block]:
-    """Lines → paragraphs/headings/signature blocks, tables kept as rows, in reading order."""
+                 median_size: float = 10.0, page_height: float | None = None) -> list[Block]:
+    """Lines → paragraphs/headings/signature blocks, tables kept as rows, in reading order.
+    Running headers/footers (short lines in the top/bottom margin) are dropped."""
     tables = tables or []
     in_table: set[int] = set()
     for (x0, top, x1, bottom), _rows in tables:
@@ -108,21 +109,38 @@ def build_blocks(words: list[Word], sizes: dict[int, float] | None = None, bold:
     index = {id(w): i for i, w in enumerate(words)}
     free = [w for i, w in enumerate(words) if i not in in_table]
     lines = group_lines(free)
+    if page_height:
+        lines = [ln for ln in lines if not _is_furniture(ln, page_height)]
     heights = [max(w.bottom for w in ln) - min(w.top for w in ln) for ln in lines] or [10.0]
     line_h = median(heights)
 
     items: list[tuple[float, Block]] = []
     para: list[list[Word]] = []
+    sig: dict = {}          # the open signature block: its lines and position in items
 
     def flush() -> None:
-        if para:
-            text = " ".join(_line_text(ln) for ln in para)
-            flat = [w for ln in para for w in ln]
-            kind = "signature" if any(SIGNATURE_RE.search(_line_text(ln)) for ln in para) else "paragraph"
-            if kind == "signature":
-                text = "\n".join(_line_text(ln) for ln in para)
-            items.append((flat[0].top, Block(kind, text, _bbox(flat))))
-            para.clear()
+        if not para:
+            return
+        flat = [w for ln in para for w in ln]
+        top = min(w.top for w in flat)
+        short = all(len(ln) <= 12 for ln in para)
+        is_sig = any(SIGNATURE_RE.search(_line_text(ln)) for ln in para)
+        # names, titles and dates under a signature line belong to the same block
+        continues = bool(sig) and short and top - sig["bottom"] < 120
+        if is_sig or continues:
+            if continues:
+                lines = sig["lines"] + [list(ln) for ln in para]
+                index = sig["index"]
+            else:
+                lines, index = [list(ln) for ln in para], len(items)
+                items.append((top, Block("signature", "", None)))
+            all_words = [w for ln in lines for w in ln]
+            items[index] = (items[index][0], Block("signature", signature_text(lines), _bbox(all_words)))
+            sig.update(lines=lines, index=index, bottom=max(w.bottom for w in flat))
+        else:
+            items.append((top, Block("paragraph", " ".join(_line_text(ln) for ln in para), _bbox(flat))))
+            sig.clear()
+        para.clear()
 
     prev_bottom = None
     for ln in lines:
@@ -132,8 +150,10 @@ def build_blocks(words: list[Word], sizes: dict[int, float] | None = None, bold:
         size = median([sizes[i] for i in idx]) if sizes else median_size
         is_bold = bool(bold) and sum(i in bold for i in idx) >= 0.6 * len(idx)
         short = len(text.split()) <= 14
-        heading = short and (size >= median_size * 1.15 or is_bold or bool(HEADING_RE.match(text))
-                             or (text.isupper() and len(text) >= 4))
+        in_signature = (bool(SIGNATURE_RE.search(text)) or (bool(sig) and short and top - sig["bottom"] < 120)
+                        or (short and any(SIGNATURE_RE.search(_line_text(p)) for p in para)))
+        heading = short and not in_signature and (
+            size >= median_size * 1.15 or is_bold or bool(HEADING_RE.match(text)) or (text.isupper() and len(text) >= 4))
         gap = (top - prev_bottom) if prev_bottom is not None else 0.0
         if heading:
             flush()
@@ -151,6 +171,47 @@ def build_blocks(words: list[Word], sizes: dict[int, float] | None = None, bold:
         items.append((bbox[1], Block("table", text, tuple(bbox), clean)))
     items.sort(key=lambda t: t[0])
     return [b for _, b in items]
+
+
+def _is_furniture(line: list[Word], page_height: float) -> bool:
+    top, bottom = min(w.top for w in line), max(w.bottom for w in line)
+    return len(line) <= 12 and (top > 0.93 * page_height or bottom < 0.05 * page_height)
+
+
+def signature_text(lines: list[list[Word]]) -> str:
+    """Signature blocks sit side by side (one column per party). Reading them row by row
+    interleaves the parties ("Lê Hoàng Minh Võ Ngọc Lan"); split at the column gap and read
+    each column top to bottom instead."""
+    rows = "\n".join(_line_text(ln) for ln in lines)
+    xs0 = min(w.x0 for ln in lines for w in ln)
+    xs1 = max(w.x1 for ln in lines for w in ln)
+    mid = (xs0 + xs1) / 2
+
+    def spans(ln: list[Word]) -> bool:
+        """A full-width line ("IN WITNESS WHEREOF, the parties…"): no wide gap at the middle."""
+        lefts = [w for w in ln if w.x1 <= mid]
+        rights = [w for w in ln if w.x0 >= mid]
+        if any(w.x0 < mid < w.x1 for w in ln):
+            return True
+        return bool(lefts and rights) and min(w.x0 for w in rights) - max(w.x1 for w in lefts) < 25
+
+    # two columns ⇔ on most lines with words on both sides, a wide empty gap spans the middle
+    two_sided = [ln for ln in lines if any(w.x1 <= mid for w in ln) and any(w.x0 >= mid for w in ln)
+                 or any(w.x0 < mid < w.x1 for w in ln)]
+    gapped = [ln for ln in two_sided if not spans(ln)]
+    if len(lines) < 3 or not two_sided or len(gapped) < 0.6 * len(two_sided):
+        return rows
+    head = []
+    body = list(lines)
+    while body and spans(body[0]):          # leading full-width lines stay whole, above the columns
+        head.append(body.pop(0))
+    left = [[w for w in ln if (w.x0 + w.x1) / 2 < mid] for ln in body]
+    right = [[w for w in ln if (w.x0 + w.x1) / 2 >= mid] for ln in body]
+    if sum(1 for ln in right if ln) < 2 or sum(1 for ln in left if ln) < 2:
+        return rows
+    col = lambda rs: "\n".join(_line_text(r) for r in rs if r)  # noqa: E731
+    prefix = col(head) + "\n\n" if head else ""
+    return prefix + col(left) + "\n\n" + col(right)
 
 
 def blocks_to_markdown(blocks: list[Block]) -> str:

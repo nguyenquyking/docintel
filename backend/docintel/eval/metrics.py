@@ -10,6 +10,9 @@ Per field and document the outcome is one of:
   negative (a bad output and a miss);
 * ``partial`` — list fields (parties, line items) matched only in part.
 
+Flags (auto-renewal, termination for convenience) treat a silent document as "no":
+a mechanism the agreement never mentions does not exist.
+
 Equality is defined per type — dates by calendar day, money by amount (±0.5%) and
 currency, names by normalized similarity, jurisdictions by canonical name — so a
 formatting difference is never an error, and a lost diacritic in a name is.
@@ -30,11 +33,11 @@ EVAL_FIELDS: dict[str, str] = {
     "effective_date": "date",
     "expiration_type": "enum",
     "initial_term_end": "date",
-    "auto_renewal": "bool",
+    "auto_renewal": "flag",
     "renewal_term_months": "int",
     "non_renewal_notice_days": "int",
     "notice_deadline": "date",
-    "termination_for_convenience": "bool",
+    "termination_for_convenience": "flag",
     "contract_value": "money",
     "value_period": "enum",
     "payment_terms_days": "int",
@@ -125,6 +128,14 @@ def compare(ftype: str, gold: Any, pred: Any, options: dict | None = None) -> Fi
         fp, fn = len(p) - m, len(g) - m
         ok = fp == 0 and fn == 0
         return FieldOutcome("tp" if ok else ("fp" if not g else "fn" if not p else "partial"), ok, m, fp, fn)
+    if ftype == "flag":
+        # a right or mechanism the document never mentions does not exist: silent ≡ false
+        g, p = bool(gold), bool(pred)
+        if not g and not p:
+            return FieldOutcome("tn", True)
+        if g and p:
+            return FieldOutcome("tp", True, tp=1)
+        return FieldOutcome("fp", False, fp=1) if p else FieldOutcome("fn", False, fn=1)
     if _empty(gold) and _empty(pred):
         return FieldOutcome("tn", True)
     if _empty(gold):
