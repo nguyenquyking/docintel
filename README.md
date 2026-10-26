@@ -21,7 +21,7 @@ API and UI built around three questions:
 3. **Will it keep working?** Live quality proxies, human corrections as labels, input and
    output drift (PSI), and a canary that catches the model changing behind its name.
 
-![Agreements dashboard](docs/img/dashboard.png)
+![Agreements dashboard](docs/img/dashboard.jpg)
 
 ## What it does
 

@@ -237,26 +237,31 @@ def summarize(run_id: str) -> dict[str, Any]:
     }
 
 
-def save_calibration(run_id: str) -> dict[str, Any]:
-    """Isotonic map raw confidence → P(correct), per extracted field, from an eval run."""
-    with session_scope() as s:
-        items = s.scalars(select(EvalItem).where(EvalItem.run_id == run_id)).all()
-        docs = {d.golden_doc_id: d.extraction_id for d in s.scalars(select(EvalDoc).where(EvalDoc.run_id == run_id))}
-        raw_conf: dict[tuple[str, str], float] = {}
-        for gid, ex_id in docs.items():
-            ex = s.get(Extraction, ex_id) if ex_id else None
-            for f in (ex.fields if ex else []):
-                raw_conf[(gid, f["field"])] = f.get("raw_confidence", f.get("confidence", 0.0))
+def save_calibration(run_id: str | list[str]) -> dict[str, Any]:
+    """Isotonic map raw confidence → P(correct), per extracted field, from one or more eval runs.
+    Fit on data like production: a synthetic-only fit is optimistic on real contracts, so
+    combine it with real-document runs (CUAD, reviewed) when they exist."""
+    run_ids = [run_id] if isinstance(run_id, str) else list(run_id)
     points: dict[str, list[tuple[float, bool]]] = defaultdict(list)
-    for it in items:
-        raw = EVAL_TO_RAW.get(it.field)
-        if raw and (it.golden_doc_id, raw) in raw_conf and it.field not in ("is_executed", "value_period", "notice_deadline"):
-            points[raw].append((raw_conf[(it.golden_doc_id, raw)], it.correct))
+    for rid in run_ids:
+        with session_scope() as s:
+            items = s.scalars(select(EvalItem).where(EvalItem.run_id == rid)).all()
+            docs = {d.golden_doc_id: d.extraction_id for d in s.scalars(select(EvalDoc).where(EvalDoc.run_id == rid))}
+            raw_conf: dict[tuple[str, str], float] = {}
+            for gid, ex_id in docs.items():
+                ex = s.get(Extraction, ex_id) if ex_id else None
+                for f in (ex.fields if ex else []):
+                    raw_conf[(gid, f["field"])] = f.get("raw_confidence", f.get("confidence", 0.0))
+        for it in items:
+            raw = EVAL_TO_RAW.get(it.field)
+            if raw and (it.golden_doc_id, raw) in raw_conf and it.field not in ("is_executed", "value_period",
+                                                                                 "notice_deadline"):
+                points[raw].append((raw_conf[(it.golden_doc_id, raw)], it.correct))
     table = {f: isotonic_fit(pts) for f, pts in points.items() if len(pts) >= 15}
     table["*"] = isotonic_fit([p for pts in points.values() for p in pts])
     with session_scope() as s:
         row = s.get(Setting, CALIBRATION_KEY)
-        value = {**table, "_source_run": run_id}
+        value = {**table, "_source_runs": run_ids}
         if row:
             row.value = value
         else:

@@ -80,7 +80,7 @@ def process(path: Path, preset: str = "cascade") -> None:
 
 
 @app.command()
-def demo(n: int = 8, seed: int = 2026, upload_url: str | None = None) -> None:
+def demo(n: int = 12, seed: int = 2026, upload_url: str | None = None) -> None:
     """Generate sample contracts — some with cancel-by dates in the coming weeks — and queue them.
     With --upload-url (e.g. http://127.0.0.1:8077) they go through the HTTP API like a user upload."""
     from datetime import date
@@ -114,14 +114,23 @@ def demo(n: int = 8, seed: int = 2026, upload_url: str | None = None) -> None:
             ("vi", "lease", "short", (), soon(10, 60)), ("bilingual", "services_agreement", "short", (), None),
             ("en", "nda", "short", ("draft",), None), ("en", "purchase_agreement", "short", (), None),
             ("vi", "services_agreement", "medium", (), None), ("en", "services_agreement", "long", ("amendment",), None),
-            ("en", "lease", "short", ("redline",), soon(-20, -1)), ("vi", "purchase_agreement", "short", (), None)]
+            ("en", "lease", "short", ("redline",), soon(-20, -1)), ("vi", "purchase_agreement", "short", (), None),
+            ("en", "nda", "short", ("scan",), None), ("vi", "lease", "short", ("scan",), soon(90, 200))]
     out_dir = get_settings().data_dir / "demo"
     out_dir.mkdir(parents=True, exist_ok=True)
     files = []
+    import random
+
+    from .synth.scan import to_scanned_pdf
     for k, (lang, typ, length, tags, req) in enumerate(plan[:n]):
-        spec = find_spec(lang, typ, length, tags=tags, require=req, start_seed=seed + k, tries=4000)
-        path = out_dir / f"demo-{k + 1:02d}-{lang}-{typ}.pdf"
-        path.write_bytes(render_pdf(build_document(spec)))
+        scanned = "scan" in tags
+        tags = tuple(t for t in tags if t != "scan")
+        spec = find_spec(lang, typ, length, scanned=scanned, tags=tags, require=req, start_seed=seed + k, tries=4000)
+        data = render_pdf(build_document(spec))
+        if scanned:
+            data = to_scanned_pdf(data, random.Random(seed + k))
+        path = out_dir / f"demo-{k + 1:02d}-{lang}-{typ}{'-scan' if scanned else ''}.pdf"
+        path.write_bytes(data)
         files.append(path)
     if upload_url:
         r = httpx.post(f"{upload_url.rstrip('/')}/api/documents", data={"lane": "interactive"}, timeout=120,
@@ -176,6 +185,37 @@ def eval_run(set_name: str = "synthetic-v1", split: str = "test", preset: str = 
                                                    "latency_ms", "evidence_recall", "calibration", "modes")},
                           indent=2, default=str))
     typer.echo(f"run id: {run_id}")
+
+
+@eval_app.command("report")
+def eval_report(set_name: str = "synthetic-v1", split: str = "test", latest: bool = True) -> None:
+    """Markdown table of finished runs on one set/split (latest run per name)."""
+    from sqlalchemy import select
+
+    from .models import EvalRun
+    _setup()
+    with session_scope() as s:
+        runs = s.scalars(select(EvalRun).where(EvalRun.set_name == set_name, EvalRun.split == split,
+                                               EvalRun.status == "done").order_by(EvalRun.created_at)).all()
+        rows: dict[str, EvalRun] = {}
+        for r in runs:
+            rows[r.name if latest else r.id] = r
+        typer.echo("| Configuration | Critical-field accuracy | Documents fully right | $ / 1k docs | p50 latency |")
+        typer.echo("|---|---|---|---|---|")
+        for r in rows.values():
+            m = r.metrics or {}
+            p50 = r.latency_p50_ms or 0
+            typer.echo(f"| {r.name} | {r.quality:.1%} | {m.get('doc_level_critical_accuracy', 0):.1%} | "
+                       f"${r.cost_per_1k:.2f} | {p50 / 1000:.1f} s |")
+
+
+@eval_app.command("calibrate")
+def eval_calibrate(run_ids: list[str]) -> None:
+    """Refit confidence calibration from one or more finished runs (dev split, real documents)."""
+    from .eval.runner import save_calibration
+    _setup()
+    table = save_calibration(run_ids)
+    typer.echo(f"calibration fitted on {len(run_ids)} run(s): {sorted(k for k in table if k != '*')}")
 
 
 @eval_app.command("gate")

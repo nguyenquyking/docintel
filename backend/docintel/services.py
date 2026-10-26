@@ -24,7 +24,7 @@ def ingest(session: Session, data: bytes, filename: str, *, source: str = "uploa
     """Store the bytes (content-addressed), create the document, queue processing.
     Returns (document, duplicate) — duplicate when identical bytes were seen before."""
     storage = storage or Storage()
-    if not data.startswith(b"%PDF"):
+    if b"%PDF-" not in data[:1024]:     # the header may follow a few junk bytes (spec allows 1 KB)
         raise ValueError("only PDF files are supported")
     sha, path, created = storage.put_blob(data, ".pdf")
     if session.get(Blob, sha) is None:

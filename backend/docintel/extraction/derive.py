@@ -98,6 +98,8 @@ def derive_facts(values: dict[str, Any], meta: dict[str, dict] | None = None, to
         status = "evergreen"
     elif current_end:
         status = "expired" if current_end < today else "active"
+    elif exp_norm == "on_completion" and executed:
+        status = "active"          # in force until both sides have performed; no date to watch
     else:
         status = "unknown"
 
