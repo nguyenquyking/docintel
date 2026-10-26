@@ -110,3 +110,24 @@ def test_without_escalation_the_hallucination_is_flagged_for_review():
         ex = s.get(Extraction, doc.latest_extraction_id)
         f = next(f for f in ex.fields if f["field"] == "non_renewal_notice")
         assert f["grounded"] is False and f["needs_review"] and doc.needs_review
+
+
+def test_rule_violations_force_review_but_drafts_do_not():
+    from docintel.extraction.confidence import score_fields
+    from docintel.extraction.derive import derive_facts
+    from docintel.extraction.verify import Evidence, FieldResult, business_rules
+
+    def fr(name, value, group="commercial"):
+        return FieldResult(name, group, value, [Evidence("q", 1, True, 1.0)], grounded=True, value_in_quote=True)
+
+    fields = [fr("contract_value", {"amount": 1000.0, "currency": "USD"}),
+              fr("line_items", [{"description": "a", "quantity": 1, "unit_price": 400.0, "amount": 400.0}]),
+              fr("signatories", [{"name": "A", "is_signed": False}], "parties")]
+    by = {f.field: f for f in fields}
+    facts = derive_facts({"contract_value": {"amount": 1000.0, "currency": "USD"},
+                          "signatories": [{"name": "A", "is_signed": False}]})
+    business_rules(by, facts)
+    score_fields(fields, page_routes={}, full_coverage={"commercial": True, "parties": True}, calibration=None,
+                 review_below=0.5)
+    assert by["contract_value"].needs_review and by["line_items"].needs_review    # 400 ≠ 1000
+    assert not by["signatories"].needs_review and by["signatories"].flags          # draft: informational

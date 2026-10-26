@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import csv
 import io
+import os
 import re
 import zipfile
 from datetime import date
@@ -44,7 +45,8 @@ def _download(target: Path) -> Path:
         return target
     target.parent.mkdir(parents=True, exist_ok=True)
     tmp = target.with_suffix(".part")
-    with httpx.stream("GET", CUAD_URL, follow_redirects=True, timeout=600) as r:
+    # a stalled mirror must fail fast rather than hang an import for minutes
+    with httpx.stream("GET", CUAD_URL, follow_redirects=True, timeout=httpx.Timeout(60, read=90)) as r:
         r.raise_for_status()
         with open(tmp, "wb") as fh:
             for chunk in r.iter_bytes(1 << 20):
@@ -82,10 +84,31 @@ def _days(s: str) -> int | None:
     return n * {"day": 1, "week": 7, "month": 30}[unit]
 
 
+def _clean_party(p: str) -> str:
+    """CUAD lists party *mentions*: 'X together with Y', 'X and its affiliates', '(“Licensor”)'.
+    Keep the legal name the mention starts with."""
+    p = re.sub(r"\(.*?\)|“.*?”|\".*?\"", "", p)
+    p = re.split(r"(?i)\s+together with\s+", p)[0]
+    p = re.sub(r"(?i),?\s+(?:and|including)\s+(?:its|their)\s+(?:successors|affiliates|subsidiaries|assigns).*$", "", p)
+    p = re.sub(r"(?i),?\s+if any$", "", p)
+    return re.sub(r"\s+", " ", p).strip(" ,;.")
+
+
 def map_row(row: dict[str, str]) -> tuple[dict, list[str]]:
+    from ..text.normalize import norm_org
+
     labels: dict = {}
-    parties = [re.sub(r"\(.*?\)|“.*?”", "", p).strip(" ,;") for p in (row.get("Parties-Answer") or "").split(";")]
-    parties = [p for p in parties if len(p) > 2]
+    parties, seen = [], set()
+    for raw in (row.get("Parties-Answer") or "").split(";"):
+        name = _clean_party(raw)
+        key = norm_org(name)
+        if re.search(r"(?i)\b(?:shall|hereinafter|referred to|collectively|individually)\b", name):
+            continue                                   # a defined-term sentence, not a party
+        if re.fullmatch(r"(?i)[\w.-]+ and [\w.-]+", name):
+            continue                                   # "Miltenyi and Bellicum": the two aliases together
+        if len(name) > 2 and key and key not in seen:
+            seen.add(key)
+            parties.append(name)
     if parties:
         labels["parties"] = parties
     eff = _us_date(row.get("Effective Date-Answer", "")) or _us_date(row.get("Agreement Date-Answer", ""))
@@ -119,7 +142,8 @@ def map_row(row: dict[str, str]) -> tuple[dict, list[str]]:
 
 def import_cuad(name: str = "cuad", n: int = 25, max_pages: int = 60, seed_stride: int = 7) -> int:
     settings = get_settings()
-    archive = _download(settings.data_dir / "datasets" / "cuad" / "CUAD_v1.zip")
+    local = os.environ.get("DOCINTEL_CUAD_ZIP")      # an already-downloaded CUAD_v1.zip
+    archive = Path(local) if local else _download(settings.data_dir / "datasets" / "cuad" / "CUAD_v1.zip")
     ensure_set(name, "cuad", "Real contracts from CUAD v1 (The Atticus Project, CC BY 4.0) with expert labels")
     storage = Storage(settings)
     added = 0

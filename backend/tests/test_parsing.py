@@ -106,3 +106,27 @@ def test_corrupt_pdf_is_fatal(tmp_path):
     from docintel.parsing.pdf import FatalParseError
     with pytest.raises(FatalParseError):
         _parse(tmp_path, b"%PDF-1.4 this is not really a pdf")
+
+
+def test_numbered_clauses_are_paragraphs_not_headings(tmp_path):
+    spec = find_spec("en", "services_agreement", "medium")
+    ir = _parse(tmp_path, render_pdf(build_document(spec)))
+    blocks = [b for p in ir.pages for b in p.blocks]
+    headings = [b.text for b in blocks if b.kind == "heading"]
+    assert any(h.endswith("Term and Termination") for h in headings)
+    assert not any(re.match(r"^\d+\.\d+\s", h) for h in headings)        # "12.2 Thereafter, …" is a clause
+    clause = next(b.text for b in blocks if b.kind == "paragraph" and b.text.split(" ", 1)[0].endswith(".2")
+                  and "renew" in b.text)
+    assert clause.split(" ", 1)[0].count(".") == 1                      # one clause per paragraph
+
+
+def test_flat_signature_strokes_still_count(monkeypatch):
+    from docintel.parsing import pdf as pdfmod
+
+    class FakePage:
+        width = 595
+        curves = [{"x0": 314, "x1": 406, "top": 433.2, "bottom": 435.9, "stroking_color": (0.12, 0.23, 0.58)}]
+        images = []
+
+    marks = pdfmod._marks(FakePage())
+    assert marks and marks[0][4] == "signed"

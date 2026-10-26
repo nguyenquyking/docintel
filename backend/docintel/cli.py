@@ -83,7 +83,7 @@ def process(path: Path, preset: str = "cascade") -> None:
 def demo(n: int = 8, seed: int = 2026, upload_url: str | None = None) -> None:
     """Generate sample contracts — some with cancel-by dates in the coming weeks — and queue them.
     With --upload-url (e.g. http://127.0.0.1:8077) they go through the HTTP API like a user upload."""
-    from datetime import date, timedelta
+    from datetime import date
 
     import httpx
 
