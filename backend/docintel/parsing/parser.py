@@ -39,6 +39,8 @@ class _Pending:
     ocr_text: str | None
 
 
+_BOILERPLATE_TITLE = re.compile(r"(?i)cộng hòa xã hội chủ nghĩa|cộng hoà xã hội chủ nghĩa|độc lập\s*-\s*tự do|"
+                                r"^confidential$|^page \d+")
 _ANCHOR = re.compile(r"(?i)^(?:by:|name:|title:|date:|signature|\(ký|ngày|đại)")
 
 
@@ -170,7 +172,8 @@ async def parse_document(path: Path, sha256: str, llm: LLMClient, settings: Sett
 
     final = [p for p in pages if p is not None]
     language = document_language([p.text for p in final])
-    title = next((b.text for p in final[:1] for b in p.blocks if b.kind == "heading"), None)
+    title = next((b.text for p in final[:1] for b in p.blocks
+                  if b.kind == "heading" and not _BOILERPLATE_TITLE.search(b.text)), None)
     ir = DocumentIR(sha256=sha256, parser_version=PARSER_VERSION, page_count=len(final), language=language,
                     title=title[:200] if title else None, pages=final)
     storage.write_json(artifact, ir.to_json())

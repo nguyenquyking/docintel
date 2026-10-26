@@ -9,7 +9,7 @@ interface Overview {
   documents: { total: number; by_status: Record<string, number>; needs_review: number };
   series: Record<string, number | string>[];
   extraction: { count: number; fresh: number; reused: number; cost_per_doc_usd: number | null; latency_ms: { p50: number | null; p95: number | null }; job_wall_ms: { p50: number | null; p95: number | null }; escalation_rate: number | null; modes: Record<string, number> };
-  llm: { calls: number; errors: number; error_rate: number | null; cache_hit_rate: number | null; prompt_cache_share: number | null; cost_usd: number; by_purpose: Record<string, Record<string, number>> };
+  llm: { calls: number; errors: number; error_rate: number | null; cache_hit_rate: number | null; prompt_cache_share: number | null; cost_usd: number; eval_cost_usd: number; by_purpose: Record<string, Record<string, number>> };
   pages: { by_route: Record<string, number>; ocr_confidence_p10: number | null; ocr_confidence_p50: number | null };
   fields: { field: string; critical: boolean; n: number; null_rate: number; grounded_rate: number | null; mean_confidence: number; review_rate: number; reviewed: number; correction_rate: number | null }[];
   reviews: { total: number; corrections: number };
@@ -29,7 +29,7 @@ export default function Monitoring() {
       <PageHeader title="Monitoring" subtitle="No ground truth in production — so live quality is read from proxies that track it (grounding, review and null rates, confidence) and from the one real label stream: human corrections." />
       <div className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-7">
         <Stat label="Extractions" value={o.extraction.count} sub={`${o.extraction.reused} reused (dedup)`} />
-        <Stat label="Cost / document" value={fmtUsd(o.extraction.cost_per_doc_usd)} sub={`$${o.llm.cost_usd.toFixed(3)} in ${o.window_days} days`} />
+        <Stat label="Cost / document" value={fmtUsd(o.extraction.cost_per_doc_usd)} sub={`$${o.llm.cost_usd.toFixed(3)} production · $${o.llm.eval_cost_usd.toFixed(2)} eval, ${o.window_days} d`} />
         <Stat label="Latency p50" value={fmtMs(o.extraction.latency_ms.p50)} sub={`p95 ${fmtMs(o.extraction.latency_ms.p95)}`} />
         <Stat label="Escalation rate" value={fmtPct(o.extraction.escalation_rate)} sub="groups sent to the strong tier" />
         <Stat label="LLM error rate" value={fmtPct(o.llm.error_rate)} sub={`${o.llm.errors} of ${o.llm.calls} calls`} tone={(o.llm.error_rate ?? 0) > 0.05 ? "bad" : "default"} />

@@ -2,14 +2,17 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { CartesianGrid, Label, ResponsiveContainer, Scatter, ScatterChart, Tooltip, XAxis, YAxis, ZAxis } from "recharts";
 import { api, post, put } from "../api";
-import { Badge, Button, Card, ErrorBox, Input, Loading, PageHeader, Td, Th } from "../components/ui";
+import { Badge, Button, Card, ErrorBox, Input, Loading, PageHeader, Select, Td, Th } from "../components/ui";
 import { fmtNum, fmtPct } from "../format";
 
 type Pricing = Record<string, { input: number; cached_input: number; output: number }>;
 interface Measured { measured: Record<string, number | null | Record<string, number>>; pricing: Pricing }
 interface Projection { total_usd: number; per_1k_docs_usd: number; effective_docs: number; pages: number; breakdown_usd: Record<string, number>; tokens: Record<string, number> }
 interface Breakeven { self_host_price_per_m: number; vendor_price_per_m: number; breakeven_tokens_per_month_m: number | null; monthly_cost_vendor: number; monthly_cost_self_host: number; monthly_savings: number; verdict: string }
-interface Pareto { points: { id: string; name: string; set: string; split: string; quality: number; cost_per_1k: number; latency_p50_ms: number | null; preset: string; on_frontier: boolean }[] }
+interface Pareto {
+  points: { id: string; name: string; set: string; split: string; quality: number; cost_per_1k: number; latency_p50_ms: number | null; preset: string; on_frontier: boolean }[];
+  set_name: string | null; split: string | null; slices: { set_name: string; split: string; runs: number }[];
+}
 
 const usd = (v: number) => `$${v.toLocaleString("en-US", { maximumFractionDigits: v < 10 ? 2 : 0 })}`;
 
@@ -26,7 +29,11 @@ function Field({ label, value, onChange, hint }: { label: string; value: string;
 export default function Cost() {
   const qc = useQueryClient();
   const measured = useQuery({ queryKey: ["cost-measured"], queryFn: () => api<Measured>("/api/cost/measured") });
-  const pareto = useQuery({ queryKey: ["pareto"], queryFn: () => api<Pareto>("/api/cost/pareto") });
+  const [slice, setSlice] = useState("");
+  const pareto = useQuery({
+    queryKey: ["pareto", slice],
+    queryFn: () => api<Pareto>(`/api/cost/pareto${slice ? `?set_name=${slice.split("/")[0]}&split=${slice.split("/")[1]}` : ""}`),
+  });
   const [pricing, setPricing] = useState<Pricing | null>(null);
   const [p, setP] = useState<Record<string, string>>({
     n_docs: "1000000", pages_per_doc: "10", tokens_per_page: "650", sent_fraction: "1", output_tokens_per_doc: "1200",
@@ -66,7 +73,11 @@ export default function Cost() {
     <>
       <PageHeader title="Cost" subtitle="What the corpus costs, which configuration gives the best quality per dollar, and when our own model would beat vendor pricing — from measured pipeline statistics, with prices as the only assumption." />
       <div className="mb-6 grid grid-cols-1 gap-6 xl:grid-cols-3">
-        <Card className="xl:col-span-2" title="Quality per dollar" subtitle="Each point is an eval run (same golden set ⇒ comparable). Frontier = no other run is both cheaper and better.">
+        <Card className="xl:col-span-2" title="Quality per dollar" subtitle="Each point is an eval run on the same golden set and split. Frontier = no other run is both cheaper and better."
+          actions={pareto.data && pareto.data.slices.length > 0 ? (
+            <Select value={slice || `${pareto.data.set_name}/${pareto.data.split}`} onChange={setSlice}
+              options={pareto.data.slices.map((x) => ({ value: `${x.set_name}/${x.split}`, label: `${x.set_name}/${x.split} (${x.runs} runs)` }))} />
+          ) : undefined}>
           {points.length === 0 ? <div className="py-10 text-center text-sm text-slate-500">Run evaluations with different presets to populate the frontier.</div> : (
             <ResponsiveContainer width="100%" height={300}>
               <ScatterChart margin={{ top: 10, right: 20, bottom: 20, left: 0 }}>

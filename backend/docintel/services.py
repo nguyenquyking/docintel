@@ -75,6 +75,8 @@ def refresh_document_facts(session: Session, doc: Document) -> None:
     facts["alert_days"] = days
     doc.facts = facts
     doc.doc_type = facts.get("document_type") or doc.doc_type
+    if facts.get("title"):
+        doc.title = str(facts["title"])[:300]
     open_fields = [f for f in ex.fields if f.get("needs_review") and f["field"] not in reviews]
     doc.needs_review = bool(open_fields)
     crit = [f["confidence"] if f["field"] not in reviews else 1.0 for f in ex.fields if f["field"] in CRITICAL_FIELDS]

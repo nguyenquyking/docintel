@@ -1,0 +1,40 @@
+# Local production-like stack: Postgres, the API (serving the UI) and a separate worker.
+# Secrets come from .env (git-ignored) — e.g. a service principal for Databricks AI Gateway,
+# or an OpenAI-compatible endpoint. A personal CLI login does not work inside containers.
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: docintel
+      POSTGRES_USER: docintel
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-docintel-local}
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U docintel"]
+      interval: 5s
+      retries: 10
+
+  api:
+    build: .
+    env_file: [.env]
+    environment:
+      DOCINTEL_DATABASE_URL: postgresql+psycopg://docintel:${POSTGRES_PASSWORD:-docintel-local}@db:5432/docintel
+      DOCINTEL_RUN_WORKER_IN_API: "false"
+    ports: ["127.0.0.1:8077:8077"]
+    volumes: [data:/data]
+    depends_on:
+      db: {condition: service_healthy}
+
+  worker:
+    build: .
+    command: ["uv", "run", "--no-sync", "python", "-m", "docintel", "worker"]
+    env_file: [.env]
+    environment:
+      DOCINTEL_DATABASE_URL: postgresql+psycopg://docintel:${POSTGRES_PASSWORD:-docintel-local}@db:5432/docintel
+    volumes: [data:/data]
+    depends_on:
+      db: {condition: service_healthy}
+
+volumes:
+  pgdata:
+  data:

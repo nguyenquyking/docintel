@@ -113,8 +113,8 @@ def cost_breakeven(params: dict[str, Any]) -> dict[str, Any]:
 
 
 @router.get("/cost/pareto")
-def cost_pareto(set_name: str | None = None) -> dict[str, Any]:
-    return pareto(set_name)
+def cost_pareto(set_name: str | None = None, split: str | None = None) -> dict[str, Any]:
+    return pareto(set_name, split)
 
 
 class SearchBody(BaseModel):

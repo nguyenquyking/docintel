@@ -58,6 +58,7 @@ class FieldResult:
     raw_confidence: float = 0.0
     tier: str = "fast"
     needs_review: bool = False
+    force_review: bool = False     # a rule found something a human must look at, whatever the confidence
 
     def to_json(self) -> dict[str, Any]:
         return {
@@ -237,11 +238,13 @@ def business_rules(by_name: dict[str, FieldResult], facts: dict[str, Any]) -> li
     """Soft checks → warnings attached to the fields they concern."""
     warnings: list[dict[str, Any]] = []
 
-    def warn(fields: list[str], code: str, message: str) -> None:
-        warnings.append({"code": code, "fields": fields, "message": message})
+    def warn(fields: list[str], code: str, message: str, review: bool = True) -> None:
+        """review=False for facts about the agreement (a draft), not doubts about the extraction."""
+        warnings.append({"code": code, "fields": fields, "message": message, "review": review})
         for f in fields:
             if f in by_name:
                 by_name[f].flags.append(message)
+                by_name[f].force_review = by_name[f].force_review or review
 
     eff, end = facts.get("effective_date"), facts.get("initial_term_end")
     if eff and end and end < eff:
@@ -259,7 +262,7 @@ def business_rules(by_name: dict[str, FieldResult], facts: dict[str, Any]) -> li
                  f"line items sum to {total:,.2f} but the contract value is {value['amount']:,.2f}")
     sigs = by_name.get("signatories")
     if sigs and sigs.value and not all(s.get("is_signed") for s in sigs.value):
-        warn(["signatories"], "unsigned", "a signature block is not signed — likely a draft")
+        warn(["signatories"], "unsigned", "a signature block is not signed — likely a draft", review=False)
     if facts.get("auto_renewal") and facts.get("non_renewal_notice_days") is None:
         warn(["non_renewal_notice"], "renewal_without_notice", "auto-renewal without a notice period")
     if facts.get("auto_renewal") and facts.get("renewal_term_months") is None:

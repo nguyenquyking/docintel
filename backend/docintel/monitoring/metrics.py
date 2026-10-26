@@ -32,7 +32,9 @@ def overview(days: int = 30) -> dict[str, Any]:
         docs = s.scalars(select(Document).where(~Document.source.like("golden:%"))).all()
         exts = s.scalars(select(Extraction).where(Extraction.purpose == "production",
                                                   Extraction.created_at >= since)).all()
-        calls = s.scalars(select(LLMCall).where(LLMCall.created_at >= since)).all()
+        all_calls = s.scalars(select(LLMCall).where(LLMCall.created_at >= since)).all()
+        calls = [c for c in all_calls if c.run_id is None]        # production traffic only
+        eval_spend = sum(c.cost_usd for c in all_calls if c.run_id is not None)
         reviews = s.scalars(select(FieldReview).where(FieldReview.created_at >= since)).all()
         jobs = s.scalars(select(Job).where(Job.created_at >= since, Job.kind == "process_document")).all()
         pages = s.execute(select(Page.route, Page.ocr_confidence, Page.language)
@@ -121,6 +123,7 @@ def overview(days: int = 30) -> dict[str, Any]:
             "cache_hit_rate": round(sum(1 for c in calls if c.cache_hit) / len(calls), 4) if calls else None,
             "prompt_cache_share": round(sum(c.cached_tokens for c in calls) / prompt_total, 4) if prompt_total else None,
             "cost_usd": round(sum(c.cost_usd for c in calls), 6),
+            "eval_cost_usd": round(eval_spend, 6),
             "by_purpose": {k: {m: round(v, 6) for m, v in vals.items()} for k, vals in by_purpose.items()},
         },
         "pages": {"by_route": dict(routes),

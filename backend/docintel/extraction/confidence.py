@@ -57,7 +57,7 @@ def raw_score(fr: FieldResult, *, page_routes: dict[int, tuple[str, float | None
             s -= max(0.0, 0.95 - conf)
         elif route == "vlm":
             s -= 0.04
-    s -= 0.12 * len(fr.flags)
+    s -= 0.12 * len([f for f in fr.flags if not f.startswith("a signature block is not signed")])
     if fr.tier == "strong":
         s += 0.03
     return min(0.99, max(0.02, s))
@@ -82,12 +82,13 @@ def isotonic_fit(points: list[tuple[float, bool]]) -> list[list[float]]:
 
 
 def apply_calibration(score: float, table: list[list[float]] | None) -> float:
+    """Calibrated probability, kept inside [0.01, 0.99]: a finite golden set never proves certainty."""
     if not table:
         return score
     for upper, p in table:
         if score <= upper:
-            return p
-    return table[-1][1]
+            return min(0.99, max(0.01, p))
+    return min(0.99, max(0.01, table[-1][1]))
 
 
 def score_fields(results: list[FieldResult], *, page_routes: dict[int, tuple[str, float | None]],
@@ -98,7 +99,7 @@ def score_fields(results: list[FieldResult], *, page_routes: dict[int, tuple[str
         fr.raw_confidence = raw_score(fr, page_routes=page_routes, full_coverage=full_coverage.get(fr.group, False),
                                       values=values)
         fr.confidence = apply_calibration(fr.raw_confidence, calibration.get(fr.field) or calibration.get("*"))
-        fr.needs_review = fr.confidence < review_below and (fr.field in CRITICAL_FIELDS or bool(fr.flags))
+        fr.needs_review = fr.force_review or (fr.confidence < review_below and (fr.field in CRITICAL_FIELDS or bool(fr.flags)))
 
 
 def document_confidence(results: list[FieldResult]) -> float:

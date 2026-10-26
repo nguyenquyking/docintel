@@ -101,7 +101,8 @@ def _marks(page) -> list[tuple[float, float, float, float, str]]:
     clustered so one signature is one mark. Red marks are seals (common on Vietnamese contracts)."""
     raw = []
     for c in page.curves:
-        if (c["x1"] - c["x0"]) > 8 and (c["bottom"] - c["top"]) > 3:
+        w, h = c["x1"] - c["x0"], c["bottom"] - c["top"]
+        if (w > 8 and h > 3) or (w > 30 and h > 0.5):     # a flat flourish is still a signature
             raw.append([c["x0"], c["top"], c["x1"], c["bottom"], "stamp" if _is_red(c.get("stroking_color")) else "signed"])
     for im in page.images:
         if 20 < (im["x1"] - im["x0"]) < page.width * 0.6 and (im["bottom"] - im["top"]) < 120:

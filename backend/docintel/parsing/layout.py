@@ -113,6 +113,11 @@ def build_blocks(words: list[Word], sizes: dict[int, float] | None = None, bold:
         lines = [ln for ln in lines if not _is_furniture(ln, page_height)]
     heights = [max(w.bottom for w in ln) - min(w.top for w in ln) for ln in lines] or [10.0]
     line_h = median(heights)
+    # paragraph breaks: noticeably more space than this page's ordinary line spacing
+    gaps = [min(w.top for w in b) - max(w.bottom for w in a) for a, b in zip(lines, lines[1:], strict=False)]
+    gaps = [g for g in gaps if g > -line_h / 2]
+    line_gap = median(gaps) if gaps else 0.0
+    break_gap = line_gap + max(2.0, 0.3 * line_h)
 
     items: list[tuple[float, Block]] = []
     para: list[list[Word]] = []
@@ -152,14 +157,20 @@ def build_blocks(words: list[Word], sizes: dict[int, float] | None = None, bold:
         short = len(text.split()) <= 14
         in_signature = (bool(SIGNATURE_RE.search(text)) or (bool(sig) and short and top - sig["bottom"] < 120)
                         or (short and any(SIGNATURE_RE.search(_line_text(p)) for p in para)))
-        heading = short and not in_signature and (
-            size >= median_size * 1.15 or is_bold or bool(HEADING_RE.match(text)) or (text.isupper() and len(text) >= 4))
+        if sizes:   # text layer: a heading is set apart typographically, numbering alone is not enough
+            styled = size >= median_size * 1.15 or is_bold
+            heading = short and not in_signature and (styled or (text.isupper() and len(text) >= 4))
+        else:       # OCR: no font information — numbered or upper-case, short, and not a sentence start
+            heading = (len(text.split()) <= 8 and not in_signature and not text.rstrip().endswith((",", ";"))
+                       and (bool(HEADING_RE.match(text)) or (text.isupper() and len(text) >= 4))
+                       and not re.match(r"^\d+\.\d+\s", text))
         gap = (top - prev_bottom) if prev_bottom is not None else 0.0
         if heading:
             flush()
             items.append((top, Block("heading", text, _bbox(ln))))
         else:
-            if para and gap > 0.9 * line_h:
+            numbered = bool(re.match(r"^\d+(?:\.\d+)*\.?\s+\S", text))   # "12.2 Thereafter, …" opens a clause
+            if para and (gap > break_gap or (numbered and not in_signature)):
                 flush()
             para.append(ln)
         prev_bottom = max(w.bottom for w in ln)

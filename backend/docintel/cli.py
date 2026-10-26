@@ -79,6 +79,63 @@ def process(path: Path, preset: str = "cascade") -> None:
         typer.echo(json.dumps(d.facts, indent=2, ensure_ascii=False))
 
 
+@app.command()
+def demo(n: int = 8, seed: int = 2026, upload_url: str | None = None) -> None:
+    """Generate sample contracts — some with cancel-by dates in the coming weeks — and queue them.
+    With --upload-url (e.g. http://127.0.0.1:8077) they go through the HTTP API like a user upload."""
+    from datetime import date, timedelta
+
+    import httpx
+
+    from .extraction.derive import derive_facts
+    from .services import ingest as do_ingest
+    from .settings import get_settings
+    from .synth.generator import build_document, find_spec, labels_for, render_pdf
+
+    _setup()
+    today = date.today()
+
+    def soon(lo: int, hi: int):
+        def ok(spec) -> bool:
+            lab = labels_for(spec)
+            if not (spec.auto_renewal and lab["initial_term_end"] and "draft" not in spec.tags):
+                return False
+            notice = {"amount": spec.notice_amount, "unit": spec.notice_unit}
+            facts = derive_facts({"effective_date": lab["effective_date"], "expiration_type": spec.expiration_type,
+                                  "expiration_date": spec.fixed_end.isoformat() if spec.fixed_end else None,
+                                  "initial_term_months": spec.term_months, "auto_renewal": True,
+                                  "renewal_term_months": spec.renewal_months, "non_renewal_notice": notice,
+                                  "signatories": [{"name": "x", "is_signed": True}]}, today=today)
+            d = facts.get("next_notice_deadline")
+            return bool(d) and lo <= (date.fromisoformat(d) - today).days <= hi
+        return ok
+
+    plan = [("en", "services_agreement", "short", (), soon(5, 28)), ("en", "services_agreement", "medium", (), soon(40, 85)),
+            ("vi", "lease", "short", (), soon(10, 60)), ("bilingual", "services_agreement", "short", (), None),
+            ("en", "nda", "short", ("draft",), None), ("en", "purchase_agreement", "short", (), None),
+            ("vi", "services_agreement", "medium", (), None), ("en", "services_agreement", "long", ("amendment",), None),
+            ("en", "lease", "short", ("redline",), soon(-20, -1)), ("vi", "purchase_agreement", "short", (), None)]
+    out_dir = get_settings().data_dir / "demo"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    files = []
+    for k, (lang, typ, length, tags, req) in enumerate(plan[:n]):
+        spec = find_spec(lang, typ, length, tags=tags, require=req, start_seed=seed + k, tries=4000)
+        path = out_dir / f"demo-{k + 1:02d}-{lang}-{typ}.pdf"
+        path.write_bytes(render_pdf(build_document(spec)))
+        files.append(path)
+    if upload_url:
+        r = httpx.post(f"{upload_url.rstrip('/')}/api/documents", data={"lane": "interactive"}, timeout=120,
+                       files=[("files", (f.name, f.read_bytes(), "application/pdf")) for f in files])
+        r.raise_for_status()
+        typer.echo(json.dumps(r.json(), indent=1))
+    else:
+        with session_scope() as s:
+            for f in files:
+                doc, _ = do_ingest(s, f.read_bytes(), f.name, lane="interactive")
+                typer.echo(f"{doc.id}  {f.name}")
+    typer.echo(f"queued {len(files)} demo contracts")
+
+
 @golden_app.command("synthetic")
 def golden_synthetic(name: str = "synthetic-v1", n: int = 60, seed: int = 7, canary: bool = True) -> None:
     """Generate the synthetic golden set (PDFs + labels) and import it."""

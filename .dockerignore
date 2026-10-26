@@ -1,0 +1,11 @@
+.git
+.env
+.env.*
+!.env.example
+.secret-denylist
+data/
+**/node_modules
+**/.venv
+**/__pycache__
+frontend/dist
+*.db

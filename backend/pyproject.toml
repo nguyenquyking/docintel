@@ -31,6 +31,9 @@ embeddings = [
 databricks = [
     "databricks-sdk>=0.30",
 ]
+postgres = [
+    "psycopg[binary]>=3.2",
+]
 
 [project.scripts]
 docintel = "docintel.cli:app"

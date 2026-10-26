@@ -29,11 +29,14 @@ def prompt_overhead_tokens() -> int:
 
 
 def measured_parameters() -> dict[str, Any]:
+    """Over every parsed document (production and golden) and every fresh extraction:
+    more data, and the same population for every per-document average."""
     with session_scope() as s:
-        docs = s.scalars(select(Document).where(Document.processed_at.is_not(None))).all()
+        pages = s.execute(select(Page.document_id, Page.route, Page.language, Page.text)).all()
+        parsed = {doc_id for doc_id, *_ in pages}
+        docs = [d for d in s.scalars(select(Document)) if d.id in parsed]
         exts = s.scalars(select(Extraction).where(Extraction.reused_from.is_(None))).all()
         calls = s.scalars(select(LLMCall).where(LLMCall.status == "ok", LLMCall.cache_hit.is_(False))).all()
-        pages = s.execute(select(Page.document_id, Page.route, Page.language, Page.text)).all()
     if not docs:
         return {}
     by_lang: dict[str, list[int]] = defaultdict(list)
@@ -144,13 +147,18 @@ def breakeven(p: dict[str, Any]) -> dict[str, Any]:
                         f"stay with the vendor until volume exceeds {breakeven_m:,.0f}M tokens/month")}
 
 
-def pareto(set_name: str | None = None) -> dict[str, Any]:
+def pareto(set_name: str | None = None, split: str | None = None) -> dict[str, Any]:
+    """Only runs on the same golden set and split are comparable; default: the slice with most runs."""
     with session_scope() as s:
         q = select(EvalRun).where(EvalRun.status == "done", EvalRun.quality.is_not(None),
                                   EvalRun.cost_per_1k.is_not(None))
-        if set_name:
-            q = q.where(EvalRun.set_name == set_name)
-        runs = s.scalars(q.order_by(EvalRun.created_at)).all()
+        everything = s.scalars(q.order_by(EvalRun.created_at)).all()
+        slices: dict[tuple[str, str], int] = {}
+        for r in everything:
+            slices[(r.set_name, r.split)] = slices.get((r.set_name, r.split), 0) + 1
+        if not set_name and slices:
+            set_name, split = max(slices, key=lambda k: (slices[k], k[1] == "test"))
+        runs = [r for r in everything if r.set_name == set_name and (split is None or r.split == split)]
         points = [{"id": r.id, "name": r.name, "set": r.set_name, "split": r.split, "quality": r.quality,
                    "cost_per_1k": r.cost_per_1k, "latency_p50_ms": r.latency_p50_ms,
                    "preset": (r.config or {}).get("preset")} for r in runs]
@@ -161,4 +169,5 @@ def pareto(set_name: str | None = None) -> dict[str, Any]:
             best = pt["quality"]
     for pt in points:
         pt["on_frontier"] = pt["id"] in frontier
-    return {"points": points, "frontier": frontier}
+    return {"points": points, "frontier": frontier, "set_name": set_name, "split": split,
+            "slices": [{"set_name": k[0], "split": k[1], "runs": v} for k, v in sorted(slices.items())]}
