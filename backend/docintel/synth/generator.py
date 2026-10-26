@@ -36,7 +36,16 @@ from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import mm
-from reportlab.platypus import Flowable, KeepTogether, PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from reportlab.platypus import (
+    Flowable,
+    KeepTogether,
+    PageBreak,
+    Paragraph,
+    SimpleDocTemplate,
+    Spacer,
+    Table,
+    TableStyle,
+)
 
 from . import content as C
 from .fonts import register_fonts
@@ -117,7 +126,11 @@ def _pick_quota(rng: random.Random, n: int, weights: dict[str, float]) -> list[s
     return out
 
 
-def sample_specs(n: int, seed: int = 7) -> list[Spec]:
+def has_renewal_clause(spec: Spec) -> bool:
+    return spec.expiration_type in ("duration", "fixed_date") and spec.doc_type not in ("purchase_agreement", "sow")
+
+
+def sample_specs(n: int, seed: int = 7, scanned_rate: float = 0.25) -> list[Spec]:
     rng = random.Random(seed)
     langs = _pick_quota(rng, n, {"en": 0.5, "vi": 0.3, "bilingual": 0.2})
     lengths = _pick_quota(rng, n, {"short": 0.5, "medium": 0.33, "long": 0.17})
@@ -126,7 +139,7 @@ def sample_specs(n: int, seed: int = 7) -> list[Spec]:
         r = random.Random(seed * 1000 + i)
         lang, length = langs[i], lengths[i]
         doc_type = r.choice(DOC_TYPES[lang])
-        scanned = length != "long" and r.random() < 0.25
+        scanned = length != "long" and r.random() < scanned_rate
         tags = []
         for tag, p in [("amendment", 0.14), ("redline", 0.12), ("draft", 0.12), ("last_signature", 0.12),
                        ("notice_months", 0.12)]:
@@ -296,7 +309,7 @@ def labels_for(spec: Spec) -> dict:
         "effective_date": effective.isoformat() if effective else None,
         "expiration_type": exp_type,
         "initial_term_end": end.isoformat() if end else None,
-        "auto_renewal": spec.auto_renewal,
+        "auto_renewal": spec.auto_renewal if has_renewal_clause(spec) else None,   # silent document → null
         "renewal_term_months": spec.renewal_months,
         "non_renewal_notice_days": notice_days,
         "notice_deadline": deadline.isoformat() if deadline else None,
@@ -438,7 +451,7 @@ class Doc:
 
     def renewal_clause(self) -> None:
         s, v = self.spec, self.spec.variant
-        if s.expiration_type not in ("duration", "fixed_date") or s.doc_type in ("purchase_agreement", "sow"):
+        if not has_renewal_clause(s):
             return
         if s.auto_renewal:
             n = s.notice_amount
@@ -872,14 +885,15 @@ class GeneratedDoc:
     page_texts_file: str
 
 
-def generate_set(out_dir: Path, n: int = 60, seed: int = 7, name: str = "synthetic-v1") -> list[GeneratedDoc]:
+def generate_set(out_dir: Path, n: int = 60, seed: int = 7, name: str = "synthetic-v1",
+                 scanned_rate: float = 0.25) -> list[GeneratedDoc]:
     from .scan import to_scanned_pdf
 
     out_dir = Path(out_dir)
     (out_dir / "docs").mkdir(parents=True, exist_ok=True)
     (out_dir / "texts").mkdir(parents=True, exist_ok=True)
     manifest: list[GeneratedDoc] = []
-    for spec in sample_specs(n, seed):
+    for spec in sample_specs(n, seed, scanned_rate):
         doc = build_document(spec)
         digital = render_pdf(doc)
         texts = page_texts_of(digital)

@@ -107,7 +107,8 @@ def norm_jurisdiction(s: str) -> str:
     s = re.sub(r"^(?:the\s+)?laws?\s+of\s+", "", s)
     s = re.sub(r"^(?:the\s+)?(?:state|commonwealth|province)\s+of\s+", "", s)
     s = re.sub(r"^(?:pháp\s+luật|luật)\s+(?:của\s+)?(?:nước\s+)?", "", s)
-    s = re.sub(r",?\s*(?:usa|united states)$", "", s).strip(" .,;")
+    s = re.sub(r",\s*(?:usa|u\.s\.a\.?|united states(?: of america)?|canada|united kingdom|uk|australia|"
+               r"(?:people's republic of )?china|india)$", "", s).strip(" .,;")
     for canon, aliases in _JURISDICTION_ALIASES.items():
         if s == canon or s in aliases:
             return canon

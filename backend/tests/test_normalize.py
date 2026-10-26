@@ -2,8 +2,19 @@ from datetime import date
 
 from docintel.text.lang import detect_language, document_language
 from docintel.text.normalize import (
-    amounts_equal, detect_currency, estimate_tokens, find_amounts, find_dates, find_integers, name_similarity,
-    norm_jurisdiction, norm_org, normalize_for_match, parse_date, parse_number, quote_score,
+    amounts_equal,
+    detect_currency,
+    estimate_tokens,
+    find_amounts,
+    find_dates,
+    find_integers,
+    name_similarity,
+    norm_jurisdiction,
+    norm_org,
+    normalize_for_match,
+    parse_date,
+    parse_number,
+    quote_score,
 )
 
 

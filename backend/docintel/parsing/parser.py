@@ -14,7 +14,12 @@ from ..text.lang import detect_language, document_language
 from ..versions import PARSER_VERSION
 from .ir import DocumentIR, PageIR, Word
 from .layout import (
-    blocks_to_markdown, blocks_to_text, build_blocks, group_lines, looks_tabular, markdown_to_blocks,
+    blocks_to_markdown,
+    blocks_to_text,
+    build_blocks,
+    group_lines,
+    looks_tabular,
+    markdown_to_blocks,
     struck_word_indices,
 )
 from .ocr import get_engine
