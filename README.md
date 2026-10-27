@@ -41,6 +41,13 @@ API and UI built around three questions:
 | **Operations** | DB-backed queue with interactive and backfill lanes, leases, backoff, dead letter, idempotency; content-addressed dedup; every artifact versioned and cached |
 | **Search & ask** | hybrid retrieval over section-aware chunks, filtered by extracted facts ("auto-renewing, cancel-by in 30 days"), answers with page citations whose quotes are verified |
 
+<table>
+<tr>
+<td width="50%"><img src="docs/img/document.jpg" alt="A 96-page agreement: the fee amended on page 96, highlighted in the PDF next to its extracted value"/><br/><sub><b>Evidence, not just values.</b> A 96-page agreement whose fee was changed by an amendment on page 96: the commercial group read 7 of 96 pages, the value cites the amendment, and the quote is highlighted in the PDF.</sub></td>
+<td width="50%"><img src="docs/img/review.jpg" alt="Review queue with real contracts flagged by consistency checks"/><br/><sub><b>Doubt goes to a human.</b> Real contracts (CUAD) where the price-table rows do not add up to the stated value: consistency checks route the fields to review, whatever the model's confidence.</sub></td>
+</tr>
+</table>
+
 ## How it works
 
 ```mermaid
@@ -64,7 +71,54 @@ sets in this repository. Costs use the placeholder price table ($1.25 / $0.125 /
 input / cached / output tokens) — set your own prices on the Cost page.
 
 <!-- RESULTS:START -->
-*(filled by the final evaluation runs)*
+**Real contracts — CUAD, 25 agreements (1–56 pages), labels mapped from expert annotations**
+
+| Configuration | Critical-field accuracy | Documents fully right | $ / 1k documents |
+|---|---|---|---|
+| cascade (fast → strong on low confidence) | **95.1 %** | 76 % | **$25.51** |
+| fast tier only | 95.1 % | 76 % | $25.51 |
+| strong tier only (high reasoning effort) | 95.1 % | 76 % | $55.21 |
+| long context (whole document, one call) | 95.1 % | 76 % | $28.04 |
+
+Per field: auto-renewal, renewal term, notice period, term end and governing law 100 %,
+effective date 95 %, termination for convenience 92 %, parties 80 % (exact set match).
+Of the 8 remaining errors, 6 are label or definition ambiguities (CUAD party *mentions*
+such as "Franchisee", a parent company or individuals; an "effective date" that is the start
+of a promotion period; a termination right CUAD did not annotate), 1 is a text-layer
+artifact (small caps on a second line), 1 is a borderline model miss. Against the fast tier
+the strong tier flipped 3 answers (2 worse, 1 better) at 2.2× the cost — the cascade keeps
+it for the low-confidence tail. Calibration error (ECE) on these real contracts: 0.051, with
+calibration fitted only on synthetic documents.
+
+**Synthetic golden set — 40 test agreements (EN / VI / bilingual, 1–180 pages, 10 scanned)**
+
+| Configuration | Critical-field accuracy | Documents fully right | $ / 1k documents |
+|---|---|---|---|
+| cascade | 100 % | 100 % | $20.25 |
+| fast tier only | 100 % | 100 % | $20.25 |
+| strong tier only | 100 % | 100 % | $27.69 |
+| retrieval for every document | 100 % | 100 % | $25.96 |
+| long context for every document | 100 % | 100 % | $42.32 |
+| cascade, fresh (no answer cache) | 100 % | 100 % | $19.94 |
+
+Every slice (language, length, scanned, tables, amendments, redlines, drafts,
+last-signature effective dates, distractors) at 100 %; evidence recall of retrieval 100 %
+(the page with the gold evidence was always among the pages sent — e.g. the term and renewal
+clause on page 175 of a 180-page bilingual agreement); cited page = gold page for 99.2 % of
+fields; ECE 0.010.
+Scans: Vietnamese pages read by the VLM reach 0.99 word F1 against the ground-truth text,
+English pages read by local OCR 0.89. Fresh run latency p50 5.7 s, p95 8.3 s per document.
+A fresh re-run of the cascade produced **zero flips** against the cached run (the noise
+floor). Synthetic documents separate configurations on cost, not quality — that is what the
+real slice is for.
+
+**How the numbers moved during development** (synthetic dev split, 20 documents)
+
+| Change | Critical-field accuracy | Documents fully right |
+|---|---|---|
+| first live run | 98.1 % | 90 % |
+| OCR plausibility routing, seals as tokens, silent flags = "no" | 98.8 % | 95 % |
+| English recognizer, no line classifier, column-wise signature blocks | 100 % | 100 % |
 <!-- RESULTS:END -->
 
 ### Findings that shaped the pipeline
@@ -84,6 +138,16 @@ input / cached / output tokens) — set your own prices on the Cost page.
   no longer matches the page, confidence drops and the group escalates — on 9 of 20
   documents. Reading signature blocks column by column, and checking multi-line quotes
   segment by segment, removed every one of those escalations.
+* **Read the clause before believing a number.** On real contracts the first error
+  analysis found the model right and the labels wrong in every disputed auto-renewal case:
+  CUAD's "Renewal Term" includes renewal *options* ("shall have options to extend"), ours is
+  automatic renewal; one "no termination for convenience" label missed "either party on not
+  less than 60 days' written notice"; and one "error" was the importer itself — two CUAD
+  filings share an 80-character prefix and the CSV says `.PDF` where the archive says
+  `.pdf`, so a document had received its amendment's labels. Labels are now mapped from
+  CUAD's own clause text and matched on the exact file name: 88.5 % → 95.1 % with the model
+  and prompts unchanged — the gain is the labels, plus two parser fixes found on the way
+  (small caps, nameless parties).
 * **Routing per document beats a fixed strategy on cost.** Retrieval for every document
   costs more than one full-document call for short documents (four calls, four schema
   prefixes); sending long documents whole costs ~2× more than retrieving their pages, at
@@ -158,7 +222,7 @@ docs/           architecture, evaluation, cost, security
 ## Development
 
 ```bash
-make test        # 49 backend tests: parsing on generated PDFs, queue semantics, LLM client
+make test        # 54 backend tests: parsing on generated PDFs, queue semantics, LLM client
                  # (retries, cache, metering), an oracle model running the whole pipeline
                  # offline, eval + gate, API, secret scanner
 make lint typecheck

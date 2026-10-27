@@ -208,8 +208,9 @@ def eval_report(set_name: str = "synthetic-v1", split: str = "test", latest: boo
         for r in rows.values():
             m = r.metrics or {}
             p50 = r.latency_p50_ms or 0
+            latency = "cached" if p50 < 200 else f"{p50 / 1000:.1f} s"   # answers served from the request cache
             typer.echo(f"| {r.name} | {r.quality:.1%} | {m.get('doc_level_critical_accuracy', 0):.1%} | "
-                       f"${r.cost_per_1k:.2f} | {p50 / 1000:.1f} s |")
+                       f"${r.cost_per_1k:.2f} | {latency} |")
 
 
 @eval_app.command("calibrate")

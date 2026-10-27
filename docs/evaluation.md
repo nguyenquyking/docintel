@@ -9,7 +9,7 @@ executable twin and the two must change together.
 | Set | Source | Labels | Why it exists |
 |---|---|---|---|
 | `synthetic-v1` | `synth/generator.py` (seeded) | every field, plus the page each value is evidenced on | controllable coverage of the hard cases, publishable |
-| `cuad` | CUAD v1 (The Atticus Project, CC BY 4.0) | the fields CUAD answers determine (see `datasets/cuad.py`) | real commercial contracts, real layouts, expert annotations |
+| `cuad` | CUAD v1 (The Atticus Project, CC BY 4.0) | the fields CUAD's answers determine, mapped to our definitions (see `datasets/cuad.py`) | real commercial contracts, real layouts, expert annotations |
 | `reviewed` | production documents after human review | only fields a person approved or corrected | the golden set grows from real traffic |
 | `canary` | fixed stratified subset of `synthetic-v1` | as source | scheduled re-runs detect provider-side model changes |
 
@@ -24,6 +24,14 @@ regression on one slice.
 
 **Splits.** `dev` (one third) is for prompt and pipeline iteration and for fitting
 calibration; `test` is for decisions. Fitting anything on `test` invalidates it.
+
+**Mapping someone else's labels is a definition exercise.** CUAD's "Renewal Term" covers
+renewal *options* as well as automatic renewals, its parties are *mentions* (aliases,
+"X together with Y"), and some governing-law answers are conditional ("the state in which
+the breach occurs"). Every disputed error was read against CUAD's own clause text before
+the mapping was fixed: automatic renewal is labeled from the clause wording, parties are
+cleaned to legal names, conditional jurisdictions stay unlabeled. Fields that cannot be
+mapped faithfully are not graded.
 
 **Privacy.** Customer documents are never committed and are only promoted into a golden
 set through the review flow, which keeps them in the deployment's own database.

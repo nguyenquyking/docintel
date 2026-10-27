@@ -158,7 +158,8 @@ def import_cuad(name: str = "cuad", n: int = 25, max_pages: int = 60, seed_strid
     storage = Storage(settings)
     added = 0
     with zipfile.ZipFile(archive) as zf:
-        pdfs = {Path(p).name: p for p in zf.namelist() if p.lower().endswith(".pdf")}
+        # CUAD's CSV and archive disagree on extension case ("….PDF" vs "….pdf"): match case-insensitively
+        pdfs = {Path(p).name.lower(): p for p in zf.namelist() if p.lower().endswith(".pdf")}
         rows = list(csv.DictReader(io.TextIOWrapper(zf.open("CUAD_v1/master_clauses.csv"), encoding="utf-8")))
         rows.sort(key=lambda r: r["Filename"])
         picked = rows[::seed_stride] + rows[1::seed_stride]
@@ -169,8 +170,8 @@ def import_cuad(name: str = "cuad", n: int = 25, max_pages: int = 60, seed_strid
                 if added >= n:
                     break
                 fname = row["Filename"]
-                path = pdfs.get(fname) or next((p for b, p in pdfs.items() if b.startswith(fname[:60])), None)
-                ext_id = f"cuad-{fname[:80]}"
+                path = pdfs.get(fname.lower())
+                ext_id = f"cuad-{fname}"           # full name: several filings share long prefixes
                 if path is None or ext_id in existing:
                     continue
                 data = zf.read(path)
@@ -201,14 +202,17 @@ def relabel_cuad(name: str = "cuad") -> int:
     local = os.environ.get("DOCINTEL_CUAD_ZIP")
     archive = Path(local) if local else _download(settings.data_dir / "datasets" / "cuad" / "CUAD_v1.zip")
     with zipfile.ZipFile(archive) as zf:
-        rows = {f"cuad-{r['Filename'][:80]}": r for r in
+        rows = {r["Filename"].lower(): r for r in
                 csv.DictReader(io.TextIOWrapper(zf.open("CUAD_v1/master_clauses.csv"), encoding="utf-8"))}
+    from ..models import Document
     n = 0
     with session_scope() as s:
         for g in s.scalars(select(GoldenDoc).where(GoldenDoc.set_name == name)):
-            row = rows.get(g.external_id)
+            doc = s.get(Document, g.document_id)
+            row = rows.get(doc.filename.lower()) if doc else None   # the exact PDF name, case-insensitive
             if row is None:
                 continue
             g.labels, g.labeled_fields = map_row(row)
+            g.external_id = f"cuad-{row['Filename']}"
             n += 1
     return n

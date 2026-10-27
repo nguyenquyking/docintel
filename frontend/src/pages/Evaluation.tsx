@@ -97,7 +97,7 @@ export default function Evaluation() {
                   <Td><StatusBadge status={r.status} />{["running", "queued"].includes(r.status) && <span className="ml-1 text-xs text-slate-500">{r.done_docs}/{r.n_docs}</span>}</Td>
                   <Td className="tabular text-right font-medium">{fmtPct(r.quality)}</Td>
                   <Td className="tabular text-right">{r.cost_per_1k != null ? `$${r.cost_per_1k.toFixed(2)}` : "—"}</Td>
-                  <Td className="tabular text-right">{fmtMs(r.latency_p50_ms)}</Td>
+                  <Td className="tabular text-right">{(r.latency_p50_ms ?? 0) > 0 && (r.latency_p50_ms ?? 0) < 200 ? "cached" : fmtMs(r.latency_p50_ms)}</Td>
                   <Td className="whitespace-nowrap text-xs text-slate-500">{fmtDateTime(r.created_at)}</Td>
                 </tr>
               ))}

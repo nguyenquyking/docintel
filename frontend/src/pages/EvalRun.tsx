@@ -39,8 +39,10 @@ export default function EvalRun() {
         <Stat label="Critical-field accuracy" value={fmtPct(m.quality)} tone="brand" sub="mean over 8 critical fields" />
         <Stat label="Documents fully right" value={fmtPct(m.doc_level_critical_accuracy)} sub="all critical fields correct" />
         <Stat label="$ / 1k documents" value={m.cost_per_1k_docs != null ? `$${m.cost_per_1k_docs.toFixed(2)}` : "—"} sub={`run total $${m.cost_total_usd.toFixed(3)}`} />
-        <Stat label="Latency p50 / p95" value={fmtMs(m.latency_ms.p50)} sub={`p95 ${fmtMs(m.latency_ms.p95)}`} />
-        <Stat label="Evidence recall" value={fmtPct(m.evidence_recall)} sub="gold page among pages sent" />
+        {(m.latency_ms.p50 ?? 0) < 200
+          ? <Stat label="Latency p50 / p95" value="cached" sub="answers served from the request cache — run without cache to time it" />
+          : <Stat label="Latency p50 / p95" value={fmtMs(m.latency_ms.p50)} sub={`p95 ${fmtMs(m.latency_ms.p95)}`} />}
+        <Stat label="Evidence recall" value={fmtPct(m.evidence_recall)} sub={m.evidence_recall == null ? "needs gold evidence pages (synthetic set)" : "gold page among pages sent"} />
         <Stat label="Calibration error" value={m.calibration.ece.toFixed(3)} sub={`ECE over ${m.calibration.n} fields`} />
       </div>
 
