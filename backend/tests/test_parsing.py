@@ -130,3 +130,14 @@ def test_flat_signature_strokes_still_count(monkeypatch):
 
     marks = pdfmod._marks(FakePage())
     assert marks and marks[0][4] == "signed"
+
+
+def test_small_caps_runs_are_glued_back_together():
+    from docintel.parsing.parser import merge_small_caps
+
+    def w(text, x0, x1, size):
+        return {"text": text, "x0": x0, "x1": x1, "top": 100.0, "bottom": 110.0, "size": size}
+
+    words = [w("T", 10, 16, 10.1), w("HIS", 16.5, 34, 8.1), w("C", 37, 44, 10.1), w("OLLABORATION", 44.4, 110, 8.1),
+             w("A", 115, 121, 10.1), w("Agreement", 124, 170, 10.1)]
+    assert [x["text"] for x in merge_small_caps(words)] == ["THIS", "COLLABORATION", "A", "Agreement"]

@@ -13,7 +13,7 @@ ENV PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1 UV_LINK_MODE=copy \
     DOCINTEL_DATA_DIR=/data DOCINTEL_API_HOST=0.0.0.0
 RUN apt-get update && apt-get install -y --no-install-recommends fonts-dejavu-core libgl1 libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
-COPY --from=ghcr.io/astral-sh/uv:0.8 /uv /usr/local/bin/uv
+COPY --from=ghcr.io/astral-sh/uv:0.11 /uv /usr/local/bin/uv
 WORKDIR /app/backend
 COPY backend/pyproject.toml backend/uv.lock backend/README.md backend/.python-version ./
 RUN uv sync --frozen --no-dev --all-extras --no-install-project

@@ -276,6 +276,9 @@ def _sanitize(data: dict[str, Any], page_count: int) -> dict[str, Any]:
     for v in data.values():
         if isinstance(v, dict) and v.get("page") is not None and not (1 <= v["page"] <= page_count):
             v["page"] = None
+    for name in ("parties", "signatories"):
+        if isinstance(data.get(name), list):
+            data[name] = [x for x in data[name] if sum(c.isalpha() for c in str(x.get("name", ""))) >= 2]
     for g, props in GROUP_PROPERTIES.items():
         for name in props:
             data.setdefault(name, _empty_group(g)[name])

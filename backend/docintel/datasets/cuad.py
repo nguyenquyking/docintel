@@ -118,21 +118,31 @@ def map_row(row: dict[str, str]) -> tuple[dict, list[str]]:
     if _us_date(exp):
         labels["initial_term_end"] = _us_date(exp)
     renewal = (row.get("Renewal Term-Answer") or "").strip()
+    clause = (row.get("Renewal Term") or "").strip("[]' ").lower()
     notice = (row.get("Notice Period To Terminate Renewal- Answer") or row.get("Notice Period To Terminate Renewal-Answer") or "").strip()
+    # CUAD's "Renewal Term" also covers renewal *options*; ours is automatic renewal. Decide from
+    # CUAD's own clause text: automatic → yes; an option, a mutual decision or a request → no;
+    # otherwise leave the field unlabeled.
+    automatic = re.search(r"automatic|shall (?:be )?(?:automatically )?(?:renew|extend)|will (?:automatically )?renew|"
+                          r"renew(?:s|ed)? (?:automatically|for successive)|unless (?:either|one) party", clause)
+    optional = re.search(r"option|may (?:extend|renew|elect)|upon mutual|mutually agree|by mutual|request|"
+                         r"if (?:the parties|both parties) agree|elect to renew", clause)
     if not renewal:
-        labels["auto_renewal"] = False if not notice else None
-        if labels["auto_renewal"] is None:
-            labels.pop("auto_renewal")
-    elif "perpetual" not in renewal.lower():
+        if not notice:
+            labels["auto_renewal"] = False
+    elif automatic and not optional:
         labels["auto_renewal"] = True
         months = _duration_months(renewal)
         if months:
             labels["renewal_term_months"] = months
         if notice and _days(notice):
             labels["non_renewal_notice_days"] = _days(notice)
+    elif optional and not automatic:
+        labels["auto_renewal"] = False
     law = (row.get("Governing Law-Answer") or "").strip()
-    if law:
-        labels["governing_law"] = law
+    first = law.split(";")[0].strip()
+    if first and not re.search(r"(?i)\bin which\b|\bact\b|\bwhere\b", first):
+        labels["governing_law"] = first
     tfc = (row.get("Termination For Convenience-Answer") or "").strip().lower()
     if tfc in ("yes", "no"):
         labels["termination_for_convenience"] = tfc == "yes"
@@ -182,3 +192,23 @@ def import_cuad(name: str = "cuad", n: int = 25, max_pages: int = 60, seed_strid
                                         "pages": pages, "source": "cuad"}))
                 added += 1
     return added
+
+
+def relabel_cuad(name: str = "cuad") -> int:
+    """Recompute labels for an imported CUAD set after a mapping change (documents unchanged)."""
+    from sqlalchemy import select
+    settings = get_settings()
+    local = os.environ.get("DOCINTEL_CUAD_ZIP")
+    archive = Path(local) if local else _download(settings.data_dir / "datasets" / "cuad" / "CUAD_v1.zip")
+    with zipfile.ZipFile(archive) as zf:
+        rows = {f"cuad-{r['Filename'][:80]}": r for r in
+                csv.DictReader(io.TextIOWrapper(zf.open("CUAD_v1/master_clauses.csv"), encoding="utf-8"))}
+    n = 0
+    with session_scope() as s:
+        for g in s.scalars(select(GoldenDoc).where(GoldenDoc.set_name == name)):
+            row = rows.get(g.external_id)
+            if row is None:
+                continue
+            g.labels, g.labeled_fields = map_row(row)
+            n += 1
+    return n

@@ -60,7 +60,24 @@ def signature_tokens(words: list[Word], marks: list[tuple[float, float, float, f
     return tokens
 
 
+def merge_small_caps(words: list[dict]) -> list[dict]:
+    """Small caps are often encoded as a full-size capital plus a smaller run ("T HIS C OLLABORATION",
+    "B IOCEPT , I NC ."). Glue a lone capital to the following smaller upper-case run on the same line."""
+    out: list[dict] = []
+    for w in words:
+        prev = out[-1] if out else None
+        if (prev is not None and len(prev["text"]) == 1 and prev["text"].isupper() and w["text"][:1].isupper()
+                and abs(prev["top"] - w["top"]) < 0.5 * max(prev.get("size", 10.0), 1.0) + 2
+                and w.get("size", 10.0) < prev.get("size", 10.0) * 0.92
+                and 0 <= w["x0"] - prev["x1"] < prev.get("size", 10.0) * 0.6):
+            out[-1] = {**prev, "text": prev["text"] + w["text"], "x1": w["x1"], "bottom": max(prev["bottom"], w["bottom"])}
+            continue
+        out.append(w)
+    return out
+
+
 def _page_from_text_layer(page_no: int, width: float, height: float, layer, reason: str) -> PageIR:
+    layer.words = merge_small_caps(layer.words)
     struck = struck_word_indices(layer.words, layer.h_segments)
     keep = [i for i in range(len(layer.words)) if i not in struck]
     words = [Word(layer.words[i]["text"], layer.words[i]["x0"], layer.words[i]["top"], layer.words[i]["x1"],

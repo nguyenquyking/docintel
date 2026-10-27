@@ -94,6 +94,9 @@ def validate_output(data: dict[str, Any], page_count: int) -> list[str]:
                 check_page(f"{name}[{i}]", item.get("page"))
                 if name == "signatories":
                     check_date(f"{name}[{i}].signed_date", item.get("signed_date"))
+                if name in ("parties", "signatories") and sum(c.isalpha() for c in str(item.get("name", ""))) < 2:
+                    errors.append(f"{name}[{i}].name: '{item.get('name')}' is not a name — omit entries for "
+                                  "blank or unnamed parties")
             continue
         if not isinstance(v, dict):
             continue

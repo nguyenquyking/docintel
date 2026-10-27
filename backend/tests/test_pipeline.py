@@ -131,3 +131,10 @@ def test_rule_violations_force_review_but_drafts_do_not():
                  review_below=0.5)
     assert by["contract_value"].needs_review and by["line_items"].needs_review    # 400 ≠ 1000
     assert not by["signatories"].needs_review and by["signatories"].flags          # draft: informational
+
+
+def test_unnamed_parties_are_sent_back_for_repair():
+    from docintel.extraction.verify import validate_output
+    errors = validate_output({"parties": [{"name": "Acme Inc.", "role": "customer", "quote": "Acme", "page": 1},
+                                          {"name": ":", "role": "other", "quote": None, "page": None}]}, 3)
+    assert any("is not a name" in e for e in errors)

@@ -168,13 +168,17 @@ make scan        # secret scan of tracked files and the full history
 CI runs the secret scan (plus gitleaks), the backend tests on SQLite and Postgres, the
 frontend build and the Docker build.
 
-## Limitations
+## Limitations and next steps
 
 * Single tenant, no authentication: put it behind your SSO proxy before exposing it.
 * Page orientation is not corrected (upside-down scans go to the VLM via low OCR confidence).
-* The synthetic set is easier than real traffic — all configurations score 100 % on it;
+* The synthetic set is easier than real traffic — every configuration scores 100 % on it;
   real contracts (CUAD, reviewed documents) are where configurations separate. CUAD
   labels are mapped from its answers and cover a subset of fields.
+* Calibration fitted on synthetic documents is optimistic on real contracts; refit it on
+  reviewed production documents (`docintel eval calibrate <runs…>`).
+* Volume-tier price schedules are read as line items; the arithmetic checks catch them
+  and send them to review — a dedicated price-schedule field is the fix.
 * SQLite is the default; Postgres is supported (and tested in CI) for multiple workers.
 
 ## Credits

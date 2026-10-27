@@ -158,11 +158,14 @@ def golden_synthetic(name: str = "synthetic-v1", n: int = 60, seed: int = 7, can
 
 
 @golden_app.command("cuad")
-def golden_cuad(name: str = "cuad", n: int = 25) -> None:
-    """Import real contracts from CUAD (CC BY 4.0) with their expert labels."""
-    from .datasets.cuad import import_cuad
+def golden_cuad(name: str = "cuad", n: int = 25, relabel: bool = False) -> None:
+    """Import real contracts from CUAD (CC BY 4.0) with their expert labels (--relabel: remap only)."""
+    from .datasets.cuad import import_cuad, relabel_cuad
     _setup()
-    typer.echo(f"imported {import_cuad(name, n)} CUAD contracts into {name}")
+    if relabel:
+        typer.echo(f"relabeled {relabel_cuad(name)} CUAD contracts in {name}")
+    else:
+        typer.echo(f"imported {import_cuad(name, n)} CUAD contracts into {name}")
 
 
 @golden_app.command("list")
