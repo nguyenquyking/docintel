@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import clsx from "clsx";
 import {
-  Activity, ClipboardCheck, Coins, FileText, FlaskConical, LayoutDashboard, ListChecks, Search, Server,
+  Activity, ClipboardCheck, Coins, FileText, FlaskConical, LayoutDashboard, ListChecks, Search, Server, Tags,
 } from "lucide-react";
 import { useState, type FormEvent, type ReactNode } from "react";
 import { NavLink, useNavigate } from "react-router";
@@ -11,6 +11,7 @@ import type { Health, Settings } from "../types";
 const NAV = [
   { to: "/", label: "Agreements", icon: LayoutDashboard, end: true },
   { to: "/documents", label: "Documents", icon: FileText },
+  { to: "/classify", label: "Classify", icon: Tags },
   { to: "/review", label: "Review queue", icon: ClipboardCheck, badge: "review" },
   { to: "/search", label: "Search & ask", icon: Search },
   { to: "/eval", label: "Evaluation", icon: FlaskConical },

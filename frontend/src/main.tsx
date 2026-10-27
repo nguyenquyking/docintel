@@ -4,6 +4,7 @@ import { createRoot } from "react-dom/client";
 import { BrowserRouter, Route, Routes } from "react-router";
 import Layout from "./components/Layout";
 import "./index.css";
+import Classify from "./pages/Classify";
 import Cost from "./pages/Cost";
 import Dashboard from "./pages/Dashboard";
 import DocumentDetail from "./pages/DocumentDetail";
@@ -27,6 +28,7 @@ createRoot(document.getElementById("root")!).render(
             <Route path="/" element={<Dashboard />} />
             <Route path="/documents" element={<Documents />} />
             <Route path="/documents/:id" element={<DocumentDetail />} />
+            <Route path="/classify" element={<Classify />} />
             <Route path="/review" element={<Review />} />
             <Route path="/search" element={<SearchPage />} />
             <Route path="/eval" element={<Evaluation />} />

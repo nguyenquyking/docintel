@@ -14,6 +14,7 @@ from fastapi.staticfiles import StaticFiles
 
 from ..db import init_db
 from ..settings import REPO_ROOT, get_settings
+from .classify import router as classify_router
 from .documents import router as documents_router
 from .evaluation import router as eval_router
 from .ops import router as ops_router
@@ -44,6 +45,7 @@ def create_app() -> FastAPI:
                   description="Agreement intelligence: contracts → verified, structured data.")
     app.add_middleware(CORSMiddleware, allow_origins=settings.cors_origins, allow_methods=["*"], allow_headers=["*"])
     app.include_router(documents_router)
+    app.include_router(classify_router)
     app.include_router(eval_router)
     app.include_router(ops_router)
     if FRONTEND_DIST.exists():

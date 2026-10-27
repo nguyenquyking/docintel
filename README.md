@@ -40,6 +40,7 @@ API and UI built around three questions:
 | **Cost** | quality-per-dollar frontier across configurations, corpus projection from measured statistics, self-hosting break-even |
 | **Operations** | DB-backed queue with interactive and backfill lanes, leases, backoff, dead letter, idempotency; content-addressed dedup; every artifact versioned and cached |
 | **Search & ask** | hybrid retrieval over section-aware chunks, filtered by extracted facts ("auto-renewing, cancel-by in 30 days"), answers with page citations whose quotes are verified |
+| **Classify** | what *is* this PDF (NDA, visa, lease, invoice…)? Read from the first and last pages, where documents say what they are; one type from an editable taxonomy (no training), with a confidence and quotes checked against the page text; scanned pages go to the vision model |
 
 <table>
 <tr>

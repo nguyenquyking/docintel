@@ -231,3 +231,46 @@ export interface GateReport {
   rules: { alpha: number; max_drop: number; critical: string[] };
   cost_note: string | null;
 }
+
+export interface DocType {
+  code: string;
+  label: string;
+  definition: string;
+}
+
+export interface DocTypes {
+  types: DocType[];
+  custom: boolean;
+  default_count: number;
+}
+
+export interface ClassifyEvidence {
+  page: number;
+  quote: string;
+  grounded: boolean | null;
+  route: "text" | "image" | null;
+}
+
+export interface ClassifyResult {
+  filename: string;
+  error?: string;
+  document_type: string;
+  label: string;
+  confidence: number;
+  runner_up: string | null;
+  title: string | null;
+  language: string | null;
+  reasoning: string | null;
+  evidence: ClassifyEvidence[];
+  needs_review: boolean;
+  review_reasons: string[];
+  pages_total: number;
+  pages: { number: number; route: "text" | "image" }[];
+  model_tier: string;
+  prompt_version: string;
+  usage: { prompt_tokens: number; completion_tokens: number; cached_tokens: number };
+  cost_usd: number;
+  cache_hit: boolean;
+  llm_latency_ms: number;
+  latency_ms: number;
+}
